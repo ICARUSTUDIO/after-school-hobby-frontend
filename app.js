@@ -2,7 +2,7 @@
 // otherwise (on github pages) use the one hosted on render
 // TODO: put your student number in the render link
 const local = location.hostname == 'localhost' || location.hostname == '127.0.0.1' || location.hostname == ''
-const API = local ? 'http://localhost:3000' : 'https://M00XXXXXX-after-school.onrender.com'
+const API = local ? 'http://localhost:3000' : 'https://m01136849-after-school-hobby-backend.onrender.com'
 
 const myApp = Vue.createApp({
     data() {
