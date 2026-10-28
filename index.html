@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extra Lessons</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;800&family=IBM+Plex+Mono:wght@500&display=swap">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body>
+    <div id="app">
+
+        <!-- navbar -->
+        <nav class="topbar">
+            <div class="container d-flex justify-content-between align-items-center">
+                <span class="logo">
+                    <span class="logo-box"><i class="fa-solid fa-graduation-cap"></i></span>
+                    {{ siteName }}
+                </span>
+                <button class="btn-chunky cart-btn" v-on:click="toggleCart" v-bind:disabled="cart.length == 0">
+                    <span v-if="showLessons"><i class="fa-solid fa-cart-shopping"></i> Cart</span>
+                    <span v-else><i class="fa-solid fa-arrow-left"></i> Lessons</span>
+                    <span class="cart-count" v-if="cart.length > 0">{{ cart.length }}</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- banner with the search box -->
+        <header class="banner" v-if="showLessons">
+            <div class="container">
+                <h1>Find the right <span class="marker">after school</span> class for your kid</h1>
+                <p>Maths, music, football and more, all around Mauritius.</p>
+
+                <div class="search-box">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" v-model="search" v-on:input="searchLessons" placeholder="Search by subject, place, price...">
+                </div>
+            </div>
+        </header>
+
+        <main class="container py-4">
+
+            <div class="note note-green" v-if="orderMessage">
+                <i class="fa-solid fa-circle-check"></i> {{ orderMessage }}
+            </div>
+
+            <div class="note note-pink" v-if="errorMessage">
+                <i class="fa-solid fa-triangle-exclamation"></i> {{ errorMessage }}
+            </div>
+
+            <!-- lessons page -->
+            <div v-if="showLessons">
+
+                <div class="toolbar">
+                    <div class="tool">
+                        <label>Sort by</label>
+                        <select class="form-select" v-model="sortBy">
+                            <option value="topic">Subject</option>
+                            <option value="location">Location</option>
+                            <option value="price">Price</option>
+                            <option value="space">Spaces</option>
+                        </select>
+                    </div>
+
+                    <div class="tool">
+                        <label>Order</label>
+                        <div class="toggle">
+                            <button v-bind:class="{ on: sortOrder == 'asc' }" v-on:click="sortOrder = 'asc'">
+                                <i class="fa-solid fa-arrow-up"></i> Asc
+                            </button>
+                            <button v-bind:class="{ on: sortOrder == 'desc' }" v-on:click="sortOrder = 'desc'">
+                                <i class="fa-solid fa-arrow-down"></i> Desc
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="tool">
+                        <label>Teacher</label>
+                        <select class="form-select" v-model="teacherId" v-on:change="pickTeacher">
+                            <option value="">All teachers</option>
+                            <option v-for="teacher in teachers" :key="teacher._id" v-bind:value="teacher._id">
+                                {{ teacher.firstName }} {{ teacher.lastName }}
+                            </option>
+                        </select>
+                    </div>
+                </div>
+
+                <p class="loading" v-if="loading">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Loading lessons... (the server can take a bit to wake up)
+                </p>
+
+                <p class="loading" v-else-if="lessons.length == 0">
+                    No lessons found. Try searching for something else.
+                </p>
+
+                <div class="row g-4">
+                    <div class="col-sm-6 col-lg-4 col-xl-3" v-for="(lesson, index) in sortedLessons" :key="lesson._id">
+
+                        <!-- clicking the card opens or closes the details -->
+                        <div class="lesson" v-on:click="toggleDetails(lesson._id)">
+                            <div class="lesson-icon" v-bind:class="'tint-' + (index % 6)">
+                                <i v-bind:class="lesson.icon"></i>
+                            </div>
+                            <h5>{{ lesson.topic }}</h5>
+                            <p class="small-info"><i class="fa-solid fa-location-dot"></i> {{ lesson.location }}</p>
+                            <p class="small-info" v-if="teacherName(lesson)"><i class="fa-solid fa-user"></i> {{ teacherName(lesson) }}</p>
+
+                            <div class="more-link">
+                                <span v-if="openLesson == lesson._id"><i class="fa-solid fa-chevron-up"></i> Hide details</span>
+                                <span v-else><i class="fa-solid fa-chevron-down"></i> View details</span>
+                            </div>
+
+                            <!-- the dropdown -->
+                            <div class="details" v-if="openLesson == lesson._id">
+                                <p class="mb-2">{{ lesson.description }}</p>
+                                <p class="mb-1"><i class="fa-regular fa-clock"></i> {{ lesson.time }}</p>
+                                <p class="mb-1"><i class="fa-solid fa-child"></i> Ages {{ lesson.ages }}</p>
+                                <p class="mb-2"><i class="fa-solid fa-users"></i> {{ enrolment[lesson._id] ?? '...' }} already enrolled</p>
+                                <b>What they will learn:</b>
+                                <ul>
+                                    <li v-for="item in lesson.learn">{{ item }}</li>
+                                </ul>
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-center mb-3 mt-auto">
+                                <span class="price">Rs {{ lesson.price }}</span>
+                                <span class="spaces" v-bind:class="spaceColour(spacesLeft(lesson))">{{ spacesLeft(lesson) }} left</span>
+                            </div>
+
+                            <!-- .stop means clicking this button won't also open the details -->
+                            <button class="btn-chunky btn-yellow w-100" v-on:click.stop="addToCart(lesson)" v-bind:disabled="spacesLeft(lesson) == 0">
+                                <span v-if="spacesLeft(lesson) > 0"><i class="fa-solid fa-plus"></i> Add to Cart</span>
+                                <span v-else>Fully Booked</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- cart page -->
+            <div v-else>
+                <div class="row g-4">
+                    <div class="col-lg-7">
+                        <div class="box">
+                            <h4>Your Cart</h4>
+                            <div class="cart-item" v-for="(lesson, index) in cart" :key="index">
+                                <div class="lesson-icon tint-2"><i v-bind:class="lesson.icon"></i></div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-semibold">{{ lesson.topic }}</div>
+                                    <small class="text-muted">{{ lesson.location }} &middot; {{ lesson.time }}</small>
+                                </div>
+                                <span class="price small-price">Rs {{ lesson.price }}</span>
+                                <button class="btn-chunky btn-small" v-on:click="removeFromCart(index)" title="Remove">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-5">
+                        <div class="box box-blue">
+                            <h4>Checkout</h4>
+
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <span>{{ cart.length }} lesson(s)</span>
+                                <span class="price">Rs {{ cartTotal }}</span>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Name</label>
+                                <input type="text" class="form-control" v-model="name" placeholder="e.g. Kevin Ramdin">
+                                <small class="error-text" v-if="name && !nameValid">Name can only have letters</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Phone</label>
+                                <input type="text" class="form-control" v-model="phone" placeholder="e.g. 57123456">
+                                <small class="error-text" v-if="phone && !phoneValid">Phone can only have numbers</small>
+                            </div>
+
+                            <button class="btn-chunky btn-pink w-100" v-on:click="checkout" v-bind:disabled="!nameValid || !phoneValid || sending">
+                                <span v-if="sending"><i class="fa-solid fa-spinner fa-spin"></i> Sending...</span>
+                                <span v-else><i class="fa-solid fa-lock"></i> Checkout</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <div class="container">&copy; 2026 {{ siteName }}</div>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
