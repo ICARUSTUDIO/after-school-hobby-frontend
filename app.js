@@ -4,13 +4,14 @@ const API = 'https://m01136849-after-school-hobby-backend.onrender.com'
 const myApp = Vue.createApp({
     data() {
         return {
-            siteName: 'Extra Lessons',
+            siteName: 'After Bell',
             showLessons: true,
             loading: true,
             sending: false,
             sortBy: 'topic',
             sortOrder: 'asc',
             openLesson: null,
+            currency: 'Rs',
             search: '',
             teacherId: '',
             name: '',
