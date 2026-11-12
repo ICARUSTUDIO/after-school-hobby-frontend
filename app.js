@@ -1,8 +1,5 @@
-// if the page is opened on my own machine use the local server,
-// otherwise (on github pages) use the one hosted on render
-// TODO: put your student number in the render link
-const local = location.hostname == 'localhost' || location.hostname == '127.0.0.1' || location.hostname == ''
-const API = local ? 'http://localhost:3000' : 'https://m01136849-after-school-hobby-backend.onrender.com'
+// address of my server on render
+const API = 'https://m01136849-after-school-hobby-backend.onrender.com'
 
 const myApp = Vue.createApp({
     data() {
@@ -26,12 +23,13 @@ const myApp = Vue.createApp({
             cart: []
         }
     },
+    // runs when the page first loads
     created() {
         this.getLessons()
         this.getTeachers()
     },
     methods: {
-        // GET all the lessons from the server
+        // GET all lessons
         getLessons() {
             this.loading = true
             fetch(API + '/lessons')
@@ -40,51 +38,42 @@ const myApp = Vue.createApp({
                     this.lessons = data
                     this.loading = false
                 })
-                .catch(error => {
-                    console.log(error)
+                .catch(() => {
                     this.errorMessage = 'Could not load the lessons, is the server running?'
                     this.loading = false
                 })
         },
+        // GET all teachers for the dropdown
         getTeachers() {
             fetch(API + '/teachers')
                 .then(response => response.json())
                 .then(data => {
                     this.teachers = data
                 })
-                .catch(error => console.log(error))
         },
-        // runs every time something is typed in the search box
+        // the search is done on the server, this just sends what was typed
         searchLessons() {
             this.teacherId = ''
-            let typed = this.search
-
-            fetch(API + '/search?q=' + encodeURIComponent(typed))
+            fetch(API + '/search?q=' + this.search)
                 .then(response => response.json())
                 .then(data => {
-                    // only use the results if the user hasn't typed something newer
-                    if (typed == this.search) {
-                        this.lessons = data
-                    }
+                    this.lessons = data
                 })
-                .catch(error => console.log(error))
         },
-        // show only the lessons from the chosen teacher
+        // show only the lessons of the chosen teacher
         pickTeacher() {
             this.search = ''
-
             if (this.teacherId == '') {
                 this.getLessons()
                 return
             }
-
             fetch(API + '/teachers/' + this.teacherId + '/lessons')
                 .then(response => response.json())
                 .then(data => {
                     this.lessons = data
                 })
-                .catch(error => console.log(error))
         },
+        // find which teacher teaches this lesson
         teacherName(lesson) {
             for (let teacher of this.teachers) {
                 if (teacher.lessonIds.includes(lesson._id)) {
@@ -93,10 +82,13 @@ const myApp = Vue.createApp({
             }
             return ''
         },
-        // spaces from the database minus the ones already in the cart
+        // how many of this lesson are in the cart
+        countInCart(lesson) {
+            return this.cart.filter(item => item._id == lesson._id).length
+        },
+        // spaces in the database minus the ones in the cart
         spacesLeft(lesson) {
-            let inCart = this.cart.filter(item => item._id == lesson._id).length
-            return lesson.space - inCart
+            return lesson.space - this.countInCart(lesson)
         },
         addToCart(lesson) {
             if (this.spacesLeft(lesson) > 0) {
@@ -104,19 +96,16 @@ const myApp = Vue.createApp({
                 this.orderMessage = ''
             }
         },
-        // taking it out of the cart gives the space back automatically
         removeFromCart(index) {
             this.cart.splice(index, 1)
-
-            // cart is empty so go back to lessons
             if (this.cart.length == 0) {
                 this.showLessons = true
             }
         },
         toggleCart() {
-            this.showLessons = this.showLessons ? false : true
+            this.showLessons = !this.showLessons
         },
-        // if this lesson is already open close it, if not open it
+        // open a lesson's details, or close them if they're already open
         toggleDetails(id) {
             if (this.openLesson == id) {
                 this.openLesson = null
@@ -125,34 +114,34 @@ const myApp = Vue.createApp({
                 this.getEnrolment(id)
             }
         },
-        // how many people have already bought this lesson
+        // GET how many spaces have been bought for a lesson
         getEnrolment(id) {
             fetch(API + '/enrolment/' + id)
                 .then(response => response.json())
                 .then(data => {
                     this.enrolment[id] = data.enrolment
                 })
-                .catch(error => console.log(error))
         },
         checkout() {
             this.sending = true
             this.errorMessage = ''
 
-            // group the cart so each lesson only appears once with how many spaces
-            let orderLessons = []
+            // list each lesson in the cart only once
+            let lessonsInCart = []
             for (let lesson of this.cart) {
-                let found = orderLessons.find(item => item.lessonId == lesson._id)
-                if (found) {
-                    found.spaces++
-                } else {
-                    orderLessons.push({ lessonId: lesson._id, topic: lesson.topic, spaces: 1, oldSpace: lesson.space })
+                if (!lessonsInCart.find(item => item._id == lesson._id)) {
+                    lessonsInCart.push(lesson)
                 }
             }
 
             let order = {
                 name: this.name,
                 phone: this.phone,
-                lessons: orderLessons.map(item => ({ lessonId: item.lessonId, topic: item.topic, spaces: item.spaces })),
+                lessons: lessonsInCart.map(lesson => ({
+                    lessonId: lesson._id,
+                    topic: lesson.topic,
+                    spaces: this.countInCart(lesson)
+                })),
                 totalSpaces: this.cart.length,
                 totalPrice: this.cartTotal
             }
@@ -163,19 +152,19 @@ const myApp = Vue.createApp({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(order)
             })
-                .then(response => response.json())
                 .then(() => {
-                    // 2. PUT the new number of spaces for every lesson in the order
-                    let updates = orderLessons.map(item => {
-                        return fetch(API + '/lessons/' + item.lessonId, {
+                    // 2. PUT the new spaces for each lesson that was bought
+                    let updates = lessonsInCart.map(lesson =>
+                        fetch(API + '/lessons/' + lesson._id, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ space: item.oldSpace - item.spaces })
+                            body: JSON.stringify({ space: this.spacesLeft(lesson) })
                         })
-                    })
+                    )
                     return Promise.all(updates)
                 })
                 .then(() => {
+                    // 3. show the message and reset everything
                     this.orderMessage = 'Thank you ' + this.name + ', your order has been submitted!'
                     this.cart = []
                     this.name = ''
@@ -187,12 +176,12 @@ const myApp = Vue.createApp({
                     this.sending = false
                     this.getLessons()
                 })
-                .catch(error => {
-                    console.log(error)
+                .catch(() => {
                     this.errorMessage = 'Something went wrong sending your order, please try again.'
                     this.sending = false
                 })
         },
+        // colour of the spaces badge
         spaceColour(space) {
             if (space == 0) return 'none-left'
             if (space <= 2) return 'few-left'
@@ -207,12 +196,13 @@ const myApp = Vue.createApp({
                 let first = a[this.sortBy]
                 let second = b[this.sortBy]
 
-                // sort by what's actually left, not what's in the database
+                // for spaces, sort by what's left after the cart
                 if (this.sortBy == 'space') {
                     first = this.spacesLeft(a)
                     second = this.spacesLeft(b)
                 }
 
+                // so "art" and "Art" sort the same
                 if (typeof first == 'string') {
                     first = first.toLowerCase()
                     second = second.toLowerCase()
@@ -242,4 +232,5 @@ const myApp = Vue.createApp({
         }
     }
 })
+
 myApp.mount('#app')
